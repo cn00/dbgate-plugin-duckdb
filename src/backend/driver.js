@@ -166,7 +166,6 @@ const driver = {
     return createBulkInsertStreamBase(this, stream, dbhan, name, options);
   },
   async getVersion(dbhan) {
-
     const { rows } = await this.query(dbhan, 'select version() as version');
     const { version } = rows[0];
 
