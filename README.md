@@ -4,3 +4,17 @@
 # dbgate-plugin-duckdb
 
 Use DbGate for install of this plugin
+
+
+# tasks
+- [x] add support for connections
+- [x] add support for databases
+- [ ] add support for tables
+- [ ] add support for views
+- [ ] add support for indexes
+- [ ] add support for triggers
+- [ ] add support for stored procedures
+- [ ] add support for functions
+- [ ] add support for sequences
+- [ ] add support for foreign keys
+- [ ] add support for constraints
