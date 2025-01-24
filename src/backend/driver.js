@@ -4,7 +4,7 @@ const driverBase = require('../frontend/driver');
 const Analyser = require('./Analyser');
 const { splitQuery, duckdbSplitterOptions } = require('dbgate-query-splitter');
 const { getLogger, createBulkInsertStreamBase, extractErrorLogData } = global.DBGATE_PACKAGES['dbgate-tools'];
-const duckdb = require('duckdb');
+const duckdb = require('duckdb-async');
 
 const logger = getLogger('duckdbDriver');
 
@@ -53,24 +53,24 @@ function runStreamItem(dbhan, sql, options, rowCounter) {
 const driver = {
   ...driverBase,
   analyserClass: Analyser,
-  async connect({ databaseFile, isReadOnly, callback }) {
+  async connect({ server, isReadOnly }) {
     let accessMode = isReadOnly ? duckdb.OPEN_READONLY : duckdb.OPEN_READWRITE;
-    const client = new duckdb.Database(databaseFile, accessMode, callback);
+    const client = await duckdb.Database.create(server, accessMode);
     return {
       client,
     };
   },
   async close(dbhan) {
-    // sqlite close is sync, returns this
-    dbhan.client.close();
+    console.log('Closing connection');
+    await dbhan.client.close();
   },
   // @ts-ignore
   async query(dbhan, sql) {
-    const stmt = dbhan.client.prepare(sql);
+    const stmt = await dbhan.client.prepare(sql);
     // stmt.raw();
-    if (stmt.reader) {
+    try {
       const columns = stmt.columns();
-      const rows = stmt.all();
+      const rows = await stmt.all();
       return {
         rows,
         columns: columns.map((col) => ({
@@ -78,12 +78,9 @@ const driver = {
           dataType: col.type,
         })),
       };
-    } else {
-      stmt.run();
-      return {
-        rows: [],
-        columns: [],
-      };
+    } catch (error) {
+      logger.error(extractErrorLogData(error), 'Query error');
+      throw error;
     }
   },
   async stream(dbhan, sql, options) {
@@ -169,6 +166,7 @@ const driver = {
     return createBulkInsertStreamBase(this, stream, dbhan, name, options);
   },
   async getVersion(dbhan) {
+
     const { rows } = await this.query(dbhan, 'select version() as version');
     const { version } = rows[0];
 
@@ -177,6 +175,11 @@ const driver = {
       versionText: `duckdb ${version}`,
     };
   },
+  async listDatabases(dbhan) {
+    const { rows } = await this.query(dbhan, 'show databases;');
+    return rows.map((db) => {return {name: db.database_name}})
+  },
+
 };
 
 driver.initialize = (dbgateEnv) => {};

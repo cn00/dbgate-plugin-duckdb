@@ -15,16 +15,16 @@ var config = {
     library: 'plugin',
   },
 
-  plugins: [
-    new webpack.DefinePlugin({
-      'global.DBGATE_PACKAGES': 'window.DBGATE_PACKAGES',
-    }),
-  ],
+//   plugins: [
+//     new webpack.DefinePlugin({
+//       'global.DBGATE_PACKAGES': 'window.DBGATE_PACKAGES',
+//     }),
+//   ],
 
   // uncomment for disable minimalization
-  // optimization: {
-  //   minimize: false,
-  // },
+  optimization: {
+    minimize: false,
+  },
 };
 
 module.exports = config;
