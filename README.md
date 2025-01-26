@@ -15,6 +15,7 @@ Use DbGate for install of this plugin
 - [x] table structure
 - [x] table data viewer
 - [x] table data filter
+- [ ] table data editor
 - [ ] bigint support
 - [ ] views
 - [ ] indexes
