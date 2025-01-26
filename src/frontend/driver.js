@@ -27,9 +27,9 @@ const driver = {
   dumperClass: Dumper,
   dialect,
   engine: 'duckdb@dbgate-plugin-duckdb',
-  title: 'DuckDb Lite',
+  title: 'DuckDB Lite',
   showConnectionField: (field, values) => {
-    return ['server', 'isReadOnly'].includes(field);
+    return ['databaseUrl', 'isReadOnly'].includes(field);
   },
   databaseUrlPlaceholder: 'e.g. server=:memory:',
 };

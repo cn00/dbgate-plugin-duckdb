@@ -116,7 +116,8 @@ class Analyser extends DatabaseAnalyser {
         };
       }
 
-      const fklist = await this.driver.query(this.dbhan, `pragma foreign_key_list('${tableName}')`);
+      const fklist = await this.driver.query(this.dbhan, 
+        `select * from information_schema.table_constraints where table_name='${tableName}' and constraint_type='FOREIGN KEY'`);
       tableObj.foreignKeys = _.values(_.groupBy(fklist.rows, 'id')).map((fkcols) => {
         const fkcol = fkcols[0];
         const fk = {

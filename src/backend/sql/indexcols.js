@@ -1,14 +1,21 @@
 module.exports = `
-SELECT 
-    m.name as tableName,
-    il.name as constraintName,
-    il."unique" as isUnique,
-    ii.name as columnName,
-    il.origin
-  FROM sqlite_schema AS m,
-       pragma_index_list(m.name) AS il,
-       pragma_index_info(il.name) AS ii
- WHERE m.type='table' AND il.origin <> 'pk'
- ORDER BY ii.seqno, il.name
-  
+select
+    a.attname as "column_name",
+    a.attnum as "attnum",
+    a.attrelid as "oid"
+from
+    pg_class t,
+    pg_class i,
+    pg_attribute a,
+    pg_index ix,
+    pg_namespace c
+where
+    t.oid = ix.indrelid
+    and a.attnum = ANY(ix.indkey)
+    and a.attrelid = t.oid
+    and i.oid = ix.indexrelid
+    and t.relkind = 'r'
+    and ix.indisprimary = false
+    and t.relnamespace = c.oid
+    and c.nspname != 'pg_catalog'
 `;

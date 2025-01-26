@@ -1,6 +1,5 @@
 module.exports = `
 SELECT 
-    rowid AS objectId,
     name AS pureName,
     CASE 
         WHEN sql LIKE '% AFTER %' THEN 'AFTER'

@@ -53,9 +53,10 @@ function runStreamItem(dbhan, sql, options, rowCounter) {
 const driver = {
   ...driverBase,
   analyserClass: Analyser,
-  async connect({ server, isReadOnly }) {
+  async connect({ databaseUrl, isReadOnly }) {
     let accessMode = isReadOnly ? duckdb.OPEN_READONLY : duckdb.OPEN_READWRITE;
-    const client = await duckdb.Database.create(server, accessMode);
+    const client = await duckdb.Database.create(databaseUrl, accessMode);
+    await client.connect();
     return {
       client,
     };
@@ -176,7 +177,7 @@ const driver = {
   },
   async listDatabases(dbhan) {
     const { rows } = await this.query(dbhan, 'show databases;');
-    return rows.map((db) => {return {name: db.database_name}})
+    return rows.map(db => ({name: db.database_name}))
   },
 
 };
