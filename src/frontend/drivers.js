@@ -214,7 +214,7 @@ EXECUTE FUNCTION function_name();`,
 /** @type {import('dbgate-types').EngineDriver} */
 const postgresDriver = {
   ...postgresDriverBase,
-  engine: 'duckdbpg@dbgate-plugin-duckdbpg',
+  engine: 'duckdb@dbgate-plugin-duckdb',
   title: 'DuckDB PG',
   defaultPort: 5432,
   dialect: {
@@ -241,7 +241,7 @@ const postgresDriver = {
 /** @type {import('dbgate-types').EngineDriver} */
 const cockroachDriver = {
   ...postgresDriverBase,
-  engine: 'cockroach@dbgate-plugin-duckdbpg',
+  engine: 'cockroach@dbgate-plugin-duckdb',
   title: 'CockroachDB',
   defaultPort: 26257,
   dialect: {
@@ -263,7 +263,7 @@ const redshiftDriver = {
   __analyserInternals: {
     skipIndexes: true,
   },
-  engine: 'redshift@dbgate-plugin-duckdbpg',
+  engine: 'redshift@dbgate-plugin-duckdb',
   title: 'Amazon Redshift',
   defaultPort: 5439,
   premiumOnly: true,

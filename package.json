@@ -1,18 +1,18 @@
 {
-  "name": "dbgate-plugin-duckdbpg",
+  "name": "dbgate-plugin-duckdb",
   "main": "dist/backend.js",
-  "version": "6.0.0-alpha.1",
+  "version": "v1.1.3",
   "license": "GPL-3.0",
-  "description": "PostgreSQL connector plugin for DbGate",
+  "description": "DuckDB connector plugin for DbGate",
   "homepage": "https://dbgate.org",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dbgate/dbgate"
+    "url": "https://github.com/cn00/dbgate-plugin-duckdb"
   },
-  "author": "Jan Prochazka",
+  "author": "cn00",
   "keywords": [
     "dbgate",
-    "postgresql",
+    "duckdb",
     "dbgatebuiltin"
   ],
   "files": [
@@ -24,9 +24,9 @@
     "build:frontend:watch": "webpack --watch --config webpack-frontend.config",
     "build:backend": "webpack --config webpack-backend.config.js",
     "build": "yarn build:frontend && yarn build:backend",
-    "plugin": "yarn build && yarn pack && dbgate-plugin dbgate-plugin-duckdbpg",
-    "copydist": "yarn build && yarn pack && dbgate-copydist ../dist/dbgate-plugin-duckdbpg",
-    "plugout": "dbgate-plugout dbgate-plugin-duckdbpg",
+    "plugin": "yarn build && yarn pack && dbgate-plugin dbgate-plugin-duckdb",
+    "copydist": "yarn build && yarn pack && dbgate-copydist ../dist/dbgate-plugin-duckdb",
+    "plugout": "dbgate-plugout dbgate-plugin-duckdb",
     "prepublishOnly": "yarn build"
   },
   "devDependencies": {

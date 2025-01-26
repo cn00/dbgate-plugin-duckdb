@@ -17,7 +17,7 @@ const {
 
 let authProxy;
 
-const logger = getLogger('duckdbpgDriver');
+const logger = getLogger('duckdbDriver');
 
 function extractGeographyDate(value) {
   try {
@@ -125,7 +125,7 @@ const drivers = driverBases.map(driverBase => ({
       awsIamToken = await authProxy.getAwsIamToken(props);
     }
 
-    if (engine == 'redshift@dbgate-plugin-duckdbpg') {
+    if (engine == 'redshift@dbgate-plugin-duckdb') {
       let url = databaseUrl;
       if (url && url.startsWith('jdbc:redshift://')) {
         url = url.substring('jdbc:redshift://'.length);
@@ -152,9 +152,9 @@ const drivers = driverBases.map(driverBase => ({
             port: authType == 'socket' ? null : port,
             user,
             password: awsIamToken || password,
-            database: extractDbNameFromComposite(database) || 'duckdbpg',
+            database: extractDbNameFromComposite(database) || 'duckdb',
             ssl: authType == 'awsIam' ? ssl || { rejectUnauthorized: false } : ssl,
-            application_name: 'DbGate duckdbpg',
+            application_name: 'DbGate duckdb',
           };
     }
     // const client = new pg.Client(options);
