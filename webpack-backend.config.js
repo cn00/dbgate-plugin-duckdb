@@ -19,9 +19,9 @@ var config = {
   },
 
   // uncomment for disable minimalization
-  //   optimization: {
-  //     minimize: false,
-  //   },
+    optimization: {
+      minimize: false,
+    },
 
   plugins: [
     new webpack.IgnorePlugin({

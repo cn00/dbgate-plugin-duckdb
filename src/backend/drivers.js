@@ -3,8 +3,11 @@ const stream = require('stream');
 
 const driverBases = require('../frontend/drivers');
 const Analyser = require('./Analyser');
+const { splitQuery, postgreSplitterOptions } = require('dbgate-query-splitter');
 const wkx = require('wkx');
-const pg = require('pg');
+const duckdb = require('duckdb-async');
+const pg = duckdb;
+// const pg = require('pg');
 const pgCopyStreams = require('pg-copy-streams');
 const {
   getLogger,
@@ -16,11 +19,11 @@ const {
 
 let authProxy;
 
-const logger = getLogger('postreDriver');
+const logger = getLogger('duckdbpgDriver');
 
-pg.types.setTypeParser(1082, 'text', val => val); // date
-pg.types.setTypeParser(1114, 'text', val => val); // timestamp without timezone
-pg.types.setTypeParser(1184, 'text', val => val); // timestamp
+// pg.types.setTypeParser(1082, 'text', val => val); // date
+// pg.types.setTypeParser(1114, 'text', val => val); // timestamp without timezone
+// pg.types.setTypeParser(1184, 'text', val => val); // timestamp
 
 function extractGeographyDate(value) {
   try {
@@ -66,6 +69,38 @@ function zipDataRow(rowArray, columns) {
   );
 }
 
+function runStreamItem(dbhan, sql, options, rowCounter) {
+  const stmt = dbhan.client.prepare(sql);
+  if (stmt.reader) {
+    const columns = stmt.columns();
+    // const rows = stmt.all();
+
+    options.recordset(
+      columns.map((col) => ({
+        columnName: col.name,
+        dataType: col.type,
+      }))
+    );
+
+    for (const row of stmt.iterate()) {
+      options.row(row);
+    }
+  } else {
+    const info = stmt.run();
+    rowCounter.count += info.changes;
+    if (!rowCounter.date) rowCounter.date = new Date().getTime();
+    if (new Date().getTime() > rowCounter.date > 1000) {
+      options.info({
+        message: `${rowCounter.count} rows affected`,
+        time: new Date(),
+        severity: 'info',
+      });
+      rowCounter.count = 0;
+      rowCounter.date = null;
+    }
+  }
+}
+  
 /** @type {import('dbgate-types').EngineDriver} */
 const drivers = driverBases.map(driverBase => ({
   ...driverBase,
@@ -86,6 +121,9 @@ const drivers = driverBases.map(driverBase => ({
       authType,
       socketPath,
     } = props;
+    /**
+     * @type {import('pg').ClientConfig}
+     */
     let options = null;
 
     let awsIamToken = null;
@@ -122,11 +160,12 @@ const drivers = driverBases.map(driverBase => ({
             password: awsIamToken || password,
             database: extractDbNameFromComposite(database) || 'duckdbpg',
             ssl: authType == 'awsIam' ? ssl || { rejectUnauthorized: false } : ssl,
-            application_name: 'DbGate',
+            application_name: 'DbGate duckdbpg',
           };
     }
-
-    const client = new pg.Client(options);
+    // const client = new pg.Client(options);
+    let accessMode = isReadOnly ? duckdb.OPEN_READONLY : duckdb.OPEN_READWRITE;
+    const client = await duckdb.Database.create(databaseUrl, accessMode);
     await client.connect();
 
     const dbhan = {
@@ -134,195 +173,184 @@ const drivers = driverBases.map(driverBase => ({
       database,
     };
 
-    const datatypes = await this.query(dbhan, `SELECT oid, typname FROM pg_type WHERE typname in ('geography')`);
+    const datatypes = await this.query(dbhan, `SELECT oid::int, typname FROM pg_type WHERE typname in ('geography')`);
     const typeIdToName = _.fromPairs(datatypes.rows.map(cur => [cur.oid, cur.typname]));
     dbhan['typeIdToName'] = typeIdToName;
 
-    if (isReadOnly) {
-      await this.query(dbhan, 'SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY');
-    }
+    // if (isReadOnly) {
+    //   await this.query(dbhan, 'SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY');
+    // }
 
     return dbhan;
   },
   async close(dbhan) {
-    return dbhan.client.end();
+    return dbhan.client.close();
   },
   async query(dbhan, sql) {
-    if (sql == null) {
+    const stmt = await dbhan.client.prepare(sql);
+    logger.info(`prepare sql: ${sql}\nstmt.sql: ${stmt.stmt.sql}`);
+    // stmt.raw();
+    try {
+      const columns = stmt.columns();
+      const rows = await stmt.all();
       return {
-        rows: [],
-        columns: [],
+        rows,
+        columns: columns.map((col) => ({
+          columnName: col.name,
+          dataType: col.type,
+        })),
       };
+    } catch (error) {
+      logger.error(extractErrorLogData(error), 'Query error');
+      throw error;
+    } finally {
+    //   logger.info(`Finalizing sql: ${stmt.stmt.sql}`);
+      await stmt.finalize();
     }
-    const res = await dbhan.client.query({ text: sql, rowMode: 'array' });
-    const columns = extractPostgresColumns(res, dbhan);
-    return { rows: (res.rows || []).map(row => zipDataRow(row, columns)), columns };
   },
-  stream(dbhan, sql, options) {
-    const query = new pg.Query({
-      text: sql,
-      rowMode: 'array',
-    });
-
-    let wasHeader = false;
-    let columnsToTransform = null;
-
-    query.on('row', row => {
-      if (!wasHeader) {
-        columns = extractPostgresColumns(query._result, dbhan);
-        if (columns && columns.length > 0) {
-          options.recordset(columns);
-        }
-        wasHeader = true;
-      }
-
-      if (!columnsToTransform) {
-        const transormableTypeNames = Object.values(dbhan.typeIdToName ?? {});
-        columnsToTransform = columns.filter(x => transormableTypeNames.includes(x.dataTypeName));
-      }
-
-      const zippedRow = zipDataRow(row, columns);
-      const transformedRow = transformRow(zippedRow, columnsToTransform);
-
-      options.row(transformedRow);
-    });
-
-    query.on('end', () => {
-      const { command, rowCount } = query._result || {};
-
-      if (command != 'SELECT' && _.isNumber(rowCount)) {
-        options.info({
-          message: `${rowCount} rows affected`,
-          time: new Date(),
-          severity: 'info',
-        });
-      }
-
-      if (!wasHeader) {
-        columns = extractPostgresColumns(query._result, dbhan);
-        if (columns && columns.length > 0) {
-          options.recordset(columns);
-        }
-        wasHeader = true;
-      }
-
-      options.done();
-    });
-
-    query.on('error', error => {
-      logger.error(extractErrorLogData(error), 'Stream error');
-      const { message, position, procName } = error;
-      let line = null;
-      if (position) {
-        line = sql.substring(0, parseInt(position)).replace(/[^\n]/g, '').length;
-      }
-      options.info({
-        message,
-        line,
-        procedure: procName,
-        time: new Date(),
-        severity: 'error',
-      });
-      options.done();
-    });
-
-    dbhan.client.query(query);
+    // async stream(dbhan, sql, options) {
+    //   const sqlSplitted = splitQuery(sql, postgreSplitterOptions);
+    //   logger.debug(`sqlSplitted: ${sqlSplitted}`);
+  
+    //   const rowCounter = { count: 0, date: null };
+  
+    //   const inTransaction = dbhan.client.transaction(() => {
+    //     for (const sqlItem of sqlSplitted) {
+    //       runStreamItem(dbhan, sqlItem, options, rowCounter);
+    //     }
+  
+    //     if (rowCounter.date) {
+    //       options.info({
+    //         message: `${rowCounter.count} rows affected`,
+    //         time: new Date(),
+    //         severity: 'info',
+    //       });
+    //     }
+    //   });
+  
+    //   try {
+    //     inTransaction();
+    //   } catch (error) {
+    //     logger.error(extractErrorLogData(error), 'Stream error');
+    //     const { message, procName } = error;
+    //     options.info({
+    //       message,
+    //       line: 0,
+    //       procedure: procName,
+    //       time: new Date(),
+    //       severity: 'error',
+    //     });
+    //   }
+  
+    //   options.done();
+    //   // return stream;
+    // },
+  async stream(dbhan, sql, options) {
+    const query = await dbhan.client.prepare(sql);
+    const columns = query.columns();
+    options.recordset(columns);
+    const rows = await query.all();
+    for (const row of rows) {
+      options.row(row);
+    }
+    options.done();
   },
   async getVersion(dbhan) {
-    const { rows } = await this.query(dbhan, 'SELECT version()');
+    const { rows } = await this.query(dbhan, 'select version() as version');
     const { version } = rows[0];
-
-    let isFipsComplianceOn = false;
-    try {
-      await this.query(dbhan, "SELECT MD5('test')");
-    } catch (err) {
-      isFipsComplianceOn = true;
-    }
-
-    const isCockroach = version.toLowerCase().includes('cockroachdb');
-    const isRedshift = version.toLowerCase().includes('redshift');
-    const isPostgres = !isCockroach && !isRedshift;
-
-    const m = version.match(/([\d\.]+)/);
-    let versionText = null;
-    let versionMajor = null;
-    let versionMinor = null;
-    if (m) {
-      if (isCockroach) versionText = `CockroachDB ${m[1]}`;
-      if (isRedshift) versionText = `Redshift ${m[1]}`;
-      if (isPostgres) versionText = `PostgreSQL ${m[1]}`;
-      const numbers = m[1].split('.');
-      if (numbers[0]) versionMajor = parseInt(numbers[0]);
-      if (numbers[1]) versionMinor = parseInt(numbers[1]);
-    }
 
     return {
       version,
-      versionText,
-      isPostgres,
-      isCockroach,
-      isRedshift,
-      versionMajor,
-      versionMinor,
-      isFipsComplianceOn,
+      versionText: `duckdb ${version}`,
     };
   },
+//   async readQuery(dbhan, sql, structure) {
+//     const query = dbhan.client.stream(sql);
+
+//     let wasHeader = false;
+//     let columns = null;
+
+//     let columnsToTransform = null;
+
+//     const pass = new stream.PassThrough({
+//       objectMode: true,
+//       highWaterMark: 100,
+//     });
+
+//     query.on('row', row => {
+//       if (!wasHeader) {
+//         columns = extractPostgresColumns(query._result, dbhan);
+//         pass.write({
+//           __isStreamHeader: true,
+//           ...(structure || { columns }),
+//         });
+//         wasHeader = true;
+//       }
+
+//       if (!columnsToTransform) {
+//         const transormableTypeNames = Object.values(dbhan.typeIdToName ?? {});
+//         columnsToTransform = columns.filter(x => transormableTypeNames.includes(x.dataTypeName));
+//       }
+
+//       const zippedRow = zipDataRow(row, columns);
+//       const transformedRow = transformRow(zippedRow, columnsToTransform);
+
+//       pass.write(transformedRow);
+//     });
+
+//     query.on('end', () => {
+//       if (!wasHeader) {
+//         columns = extractPostgresColumns(query._result, dbhan);
+//         pass.write({
+//           __isStreamHeader: true,
+//           ...(structure || { columns }),
+//         });
+//         wasHeader = true;
+//       }
+
+//       pass.end();
+//     });
+
+//     query.on('error', error => {
+//       console.error(error);
+//       pass.end();
+//     });
+
+//     dbhan.client.query(query);
+
+//     return pass;
+//   },
+  async readQueryTask(stmt, pass) {
+    let sent = 0;
+    for (const row of stmt.iterate()) {
+      sent++;
+      if (!pass.write(row)) {
+        console.log('WAIT DRAIN', sent);
+        await waitForDrain(pass);
+      }
+    }
+    pass.end();
+  },
   async readQuery(dbhan, sql, structure) {
-    const query = new pg.Query({
-      text: sql,
-      rowMode: 'array',
-    });
-
-    let wasHeader = false;
-    let columns = null;
-
-    let columnsToTransform = null;
-
+    logger.debug('readQuery', sql);
     const pass = new stream.PassThrough({
       objectMode: true,
       highWaterMark: 100,
     });
 
-    query.on('row', row => {
-      if (!wasHeader) {
-        columns = extractPostgresColumns(query._result, dbhan);
-        pass.write({
-          __isStreamHeader: true,
-          ...(structure || { columns }),
-        });
-        wasHeader = true;
-      }
+    const stmt = dbhan.client.prepare(sql);
+    const columns = stmt.columns();
 
-      if (!columnsToTransform) {
-        const transormableTypeNames = Object.values(dbhan.typeIdToName ?? {});
-        columnsToTransform = columns.filter(x => transormableTypeNames.includes(x.dataTypeName));
-      }
-
-      const zippedRow = zipDataRow(row, columns);
-      const transformedRow = transformRow(zippedRow, columnsToTransform);
-
-      pass.write(transformedRow);
+    pass.write({
+      __isStreamHeader: true,
+      ...(structure || {
+        columns: columns.map((col) => ({
+          columnName: col.name,
+          dataType: col.type,
+        })),
+      }),
     });
-
-    query.on('end', () => {
-      if (!wasHeader) {
-        columns = extractPostgresColumns(query._result, dbhan);
-        pass.write({
-          __isStreamHeader: true,
-          ...(structure || { columns }),
-        });
-        wasHeader = true;
-      }
-
-      pass.end();
-    });
-
-    query.on('error', error => {
-      console.error(error);
-      pass.end();
-    });
-
-    dbhan.client.query(query);
+    this.readQueryTask(stmt, pass);
 
     return pass;
   },
@@ -330,9 +358,13 @@ const drivers = driverBases.map(driverBase => ({
     // @ts-ignore
     return createBulkInsertStreamBase(this, stream, dbhan, name, options);
   },
+//   async listDatabases(dbhan) {
+//     const { rows } = await this.query(dbhan, "SELECT datname AS name FROM pg_database WHERE datname != 'temp'");
+//     return rows;
+//   },
   async listDatabases(dbhan) {
-    const { rows } = await this.query(dbhan, 'SELECT datname AS name FROM pg_database WHERE datistemplate = false');
-    return rows;
+    const { rows } = await this.query(dbhan, 'show databases;');
+    return rows.map(db => ({name: db.database_name}))
   },
 
   getAuthTypes() {
@@ -358,12 +390,12 @@ const drivers = driverBases.map(driverBase => ({
   async listSchemas(dbhan) {
     const schemaRows = await this.query(
       dbhan,
-      'select oid as "object_id", nspname as "schema_name" from pg_catalog.pg_namespace'
+      'select oid::int as "object_id", nspname as "schema_name" from pg_catalog.pg_namespace'
     );
     const defaultSchemaRows = await this.query(dbhan, 'SELECT current_schema');
     const defaultSchema = defaultSchemaRows.rows[0]?.current_schema?.trim();
 
-    logger.debug(`Loaded ${schemaRows.rows.length} postgres schemas`);
+    logger.debug(`Loaded ${schemaRows.rows.length} duckdb schemas`);
 
     const schemas = schemaRows.rows.map(x => ({
       schemaName: x.schema_name,

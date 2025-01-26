@@ -1,6 +1,6 @@
 module.exports = `
 SELECT 
-    t.oid AS trigger_id,
+    t.oid::int AS trigger_id,
     t.tgname AS trigger_name,
     n.nspname AS schema_name,
     c.relname AS table_name,

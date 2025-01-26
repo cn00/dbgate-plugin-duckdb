@@ -7,7 +7,7 @@ module.exports = `
         ix.indisunique as "is_unique",
         ix.indkey as "indkey",
         ix.indoption as "indoption",
-        t.oid as "oid"
+        t.oid::int as "oid"
     from
         pg_class t,
         pg_class i,
