@@ -6,8 +6,6 @@ const Analyser = require('./Analyser');
 const { splitQuery, postgreSplitterOptions } = require('dbgate-query-splitter');
 const wkx = require('wkx');
 const duckdb = require('duckdb-async');
-const pg = duckdb;
-// const pg = require('pg');
 const pgCopyStreams = require('pg-copy-streams');
 const {
   getLogger,
@@ -20,10 +18,6 @@ const {
 let authProxy;
 
 const logger = getLogger('duckdbpgDriver');
-
-// pg.types.setTypeParser(1082, 'text', val => val); // date
-// pg.types.setTypeParser(1114, 'text', val => val); // timestamp without timezone
-// pg.types.setTypeParser(1184, 'text', val => val); // timestamp
 
 function extractGeographyDate(value) {
   try {
@@ -193,6 +187,14 @@ const drivers = driverBases.map(driverBase => ({
     try {
       const columns = stmt.columns();
       const rows = await stmt.all();
+      // bigint to Number
+      rows.forEach(row => {
+        columns.forEach(col => {
+          if (col.type == 'bigint') {
+            row[col.name] = Number(row[col.name]);
+          }
+        });
+      })
       return {
         rows,
         columns: columns.map((col) => ({
@@ -208,43 +210,6 @@ const drivers = driverBases.map(driverBase => ({
       await stmt.finalize();
     }
   },
-    // async stream(dbhan, sql, options) {
-    //   const sqlSplitted = splitQuery(sql, postgreSplitterOptions);
-    //   logger.debug(`sqlSplitted: ${sqlSplitted}`);
-  
-    //   const rowCounter = { count: 0, date: null };
-  
-    //   const inTransaction = dbhan.client.transaction(() => {
-    //     for (const sqlItem of sqlSplitted) {
-    //       runStreamItem(dbhan, sqlItem, options, rowCounter);
-    //     }
-  
-    //     if (rowCounter.date) {
-    //       options.info({
-    //         message: `${rowCounter.count} rows affected`,
-    //         time: new Date(),
-    //         severity: 'info',
-    //       });
-    //     }
-    //   });
-  
-    //   try {
-    //     inTransaction();
-    //   } catch (error) {
-    //     logger.error(extractErrorLogData(error), 'Stream error');
-    //     const { message, procName } = error;
-    //     options.info({
-    //       message,
-    //       line: 0,
-    //       procedure: procName,
-    //       time: new Date(),
-    //       severity: 'error',
-    //     });
-    //   }
-  
-    //   options.done();
-    //   // return stream;
-    // },
   async stream(dbhan, sql, options) {
     const query = await dbhan.client.prepare(sql);
     const columns = query.columns();
@@ -264,62 +229,6 @@ const drivers = driverBases.map(driverBase => ({
       versionText: `duckdb ${version}`,
     };
   },
-//   async readQuery(dbhan, sql, structure) {
-//     const query = dbhan.client.stream(sql);
-
-//     let wasHeader = false;
-//     let columns = null;
-
-//     let columnsToTransform = null;
-
-//     const pass = new stream.PassThrough({
-//       objectMode: true,
-//       highWaterMark: 100,
-//     });
-
-//     query.on('row', row => {
-//       if (!wasHeader) {
-//         columns = extractPostgresColumns(query._result, dbhan);
-//         pass.write({
-//           __isStreamHeader: true,
-//           ...(structure || { columns }),
-//         });
-//         wasHeader = true;
-//       }
-
-//       if (!columnsToTransform) {
-//         const transormableTypeNames = Object.values(dbhan.typeIdToName ?? {});
-//         columnsToTransform = columns.filter(x => transormableTypeNames.includes(x.dataTypeName));
-//       }
-
-//       const zippedRow = zipDataRow(row, columns);
-//       const transformedRow = transformRow(zippedRow, columnsToTransform);
-
-//       pass.write(transformedRow);
-//     });
-
-//     query.on('end', () => {
-//       if (!wasHeader) {
-//         columns = extractPostgresColumns(query._result, dbhan);
-//         pass.write({
-//           __isStreamHeader: true,
-//           ...(structure || { columns }),
-//         });
-//         wasHeader = true;
-//       }
-
-//       pass.end();
-//     });
-
-//     query.on('error', error => {
-//       console.error(error);
-//       pass.end();
-//     });
-
-//     dbhan.client.query(query);
-
-//     return pass;
-//   },
   async readQueryTask(stmt, pass) {
     let sent = 0;
     for (const row of stmt.iterate()) {
@@ -338,7 +247,7 @@ const drivers = driverBases.map(driverBase => ({
       highWaterMark: 100,
     });
 
-    const stmt = dbhan.client.prepare(sql);
+    const stmt = await dbhan.client.prepare(sql);
     const columns = stmt.columns();
 
     pass.write({
@@ -406,8 +315,8 @@ const drivers = driverBases.map(driverBase => ({
     return schemas;
   },
 
-  writeQueryFromStream(dbhan, sql) {
-    const stream = dbhan.client.query(pgCopyStreams.from(sql));
+  async writeQueryFromStream(dbhan, sql) {
+    const stream = await dbhan.client.query(pgCopyStreams.from(sql));
     return stream;
   },
 }));
