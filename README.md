@@ -7,6 +7,7 @@
 
 Use DbGate for install of this plugin
 
+discussion: https://github.com/dbgate/dbgate/discussions/1016
 
 # tasks
 - [x] connections
@@ -16,7 +17,8 @@ Use DbGate for install of this plugin
 - [x] table data viewer
 - [x] table data filter
 - [ ] table data editor
-- [ ] bigint support
+- [x] bigint support
+- [ ] bigint on filter value select
 - [ ] views
 - [ ] indexes
 - [ ] triggers

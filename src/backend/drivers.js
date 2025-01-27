@@ -13,7 +13,7 @@ const {
   makeUniqueColumnNames,
   extractDbNameFromComposite,
   extractErrorLogData,
-} = global.DBGATE_PACKAGES['dbgate-tools'];
+} =require('dbgate-tools');
 
 let authProxy;
 
@@ -102,61 +102,11 @@ const drivers = driverBases.map(driverBase => ({
 
   async connect(props) {
     const {
-      engine,
-      server,
-      port,
-      user,
-      password,
-      database,
       databaseUrl,
-      useDatabaseUrl,
-      ssl,
+      password,
       isReadOnly,
-      authType,
-      socketPath,
     } = props;
-    /**
-     * @type {import('pg').ClientConfig}
-     */
-    let options = null;
 
-    let awsIamToken = null;
-    if (authType == 'awsIam') {
-      awsIamToken = await authProxy.getAwsIamToken(props);
-    }
-
-    if (engine == 'redshift@dbgate-plugin-duckdb') {
-      let url = databaseUrl;
-      if (url && url.startsWith('jdbc:redshift://')) {
-        url = url.substring('jdbc:redshift://'.length);
-      }
-      if (user && password) {
-        url = `postgres://${user}:${password}@${url}`;
-      } else if (user) {
-        url = `postgres://${user}@${url}`;
-      } else {
-        url = `postgres://${url}`;
-      }
-
-      options = {
-        connectionString: url,
-      };
-    } else {
-      options = useDatabaseUrl
-        ? {
-            connectionString: databaseUrl,
-            application_name: 'DbGate',
-          }
-        : {
-            host: authType == 'socket' ? socketPath || driverBase.defaultSocketPath : server,
-            port: authType == 'socket' ? null : port,
-            user,
-            password: awsIamToken || password,
-            database: extractDbNameFromComposite(database) || 'duckdb',
-            ssl: authType == 'awsIam' ? ssl || { rejectUnauthorized: false } : ssl,
-            application_name: 'DbGate duckdb',
-          };
-    }
     // const client = new pg.Client(options);
     let accessMode = isReadOnly ? duckdb.OPEN_READONLY : duckdb.OPEN_READWRITE;
     const client = await duckdb.Database.create(databaseUrl, accessMode);
@@ -164,16 +114,11 @@ const drivers = driverBases.map(driverBase => ({
 
     const dbhan = {
       client,
-      database,
     };
 
-    const datatypes = await this.query(dbhan, `SELECT oid::int, typname FROM pg_type WHERE typname in ('geography')`);
+    const datatypes = await this.query(dbhan, `SELECT oid::text as oid, typname FROM pg_type WHERE typname in ('geography')`);
     const typeIdToName = _.fromPairs(datatypes.rows.map(cur => [cur.oid, cur.typname]));
     dbhan['typeIdToName'] = typeIdToName;
-
-    // if (isReadOnly) {
-    //   await this.query(dbhan, 'SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY');
-    // }
 
     return dbhan;
   },
@@ -182,7 +127,7 @@ const drivers = driverBases.map(driverBase => ({
   },
   async query(dbhan, sql) {
     const stmt = await dbhan.client.prepare(sql);
-    logger.info(`prepare sql: ${sql}\nstmt.sql: ${stmt.stmt.sql}`);
+    logger.info(`prepare sql:\n${sql}`);
     // stmt.raw();
     try {
       const columns = stmt.columns();
@@ -212,10 +157,20 @@ const drivers = driverBases.map(driverBase => ({
   },
   async stream(dbhan, sql, options) {
     const query = await dbhan.client.prepare(sql);
-    const columns = query.columns();
+    const columns = query.columns().map(it=>({
+        columnName: it.name,
+        dataTypeId: it.type.id,
+        dataTypeName: it.type.sql_type
+    }));
     options.recordset(columns);
     const rows = await query.all();
     for (const row of rows) {
+    //   // convert bigint in row to Number
+    //   for(const key in row){
+    //     if(typeof row[key] == 'bigint')
+    //         row[key] = Number(row[key])
+    //   }
+      
       options.row(row);
     }
     options.done();
@@ -275,27 +230,6 @@ const drivers = driverBases.map(driverBase => ({
     const { rows } = await this.query(dbhan, 'show databases;');
     return rows.map(db => ({name: db.database_name}))
   },
-
-  getAuthTypes() {
-    const res = [
-      {
-        title: 'Host and port',
-        name: 'hostPort',
-      },
-      {
-        title: 'Socket',
-        name: 'socket',
-      },
-    ];
-    if (authProxy.supportsAwsIam()) {
-      res.push({
-        title: 'AWS IAM',
-        name: 'awsIam',
-      });
-    }
-    return res;
-  },
-
   async listSchemas(dbhan) {
     const schemaRows = await this.query(
       dbhan,

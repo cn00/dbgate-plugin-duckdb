@@ -96,7 +96,10 @@ const dialect = {
       };
     }
 
-    if (dataType?.toLowerCase() == 'uuid' || (purpose == 'filter' && dataType?.toLowerCase()?.startsWith('json'))) {
+    if (dataType?.toLowerCase() == 'uuid' 
+    || dataType?.toLowerCase() == 'bigint' 
+    || (purpose == 'filter' && dataType?.toLowerCase()?.startsWith('json'))
+    ) {
       return {
         exprType: 'unaryRaw',
         expr: {
@@ -108,6 +111,19 @@ const dialect = {
         alias: alias || columnName,
       };
     }
+
+    if (dataType?.toLowerCase()?.startsWith('struct')) {
+      return {
+        exprType: 'unaryRaw',
+        expr: {
+          exprType: 'column',
+          source,
+          columnName,
+        },
+        afterSql: '::json',
+        alias: alias || columnName,
+      };
+    }
   },
 };
 
@@ -115,8 +131,6 @@ const postgresDriverBase = {
   ...driverBase,
   dumperClass: Dumper,
   dialect,
-  // showConnectionField: (field, values) =>
-  //   ['server', 'port', 'user', 'password', 'defaultDatabase', 'singleDatabase'].includes(field),
   getQuerySplitterOptions: usage =>
     usage == 'editor'
       ? { ...postgreSplitterOptions, ignoreComments: true, preventSingleLineSplit: true }
@@ -128,48 +142,13 @@ const postgresDriverBase = {
       : postgreSplitterOptions,
   readOnlySessions: true,
 
-  databaseUrlPlaceholder: 'e.g. postgresql://user:password@localhost:5432/default_database',
+  databaseUrlPlaceholder: 'e.g. path/to/db.duckdb',
 
+  // showConnectionField: (field, values) =>
+  //   ['server', 'port', 'user', 'password', 'defaultDatabase', 'singleDatabase'].includes(field),
   showConnectionField: (field, values) => {
-    const allowedFields = ['useDatabaseUrl', 'authType', 'user', 'isReadOnly', 'useSeparateSchemas'];
-
-    if (values.authType == 'awsIam') {
-      allowedFields.push('awsRegion', 'secretAccessKey', 'accessKeyId');
-    }
-
-    if (values.authType == 'socket') {
-      allowedFields.push('socketPath');
-    } else {
-      if (values.useDatabaseUrl) {
-        allowedFields.push('databaseUrl');
-      } else {
-        allowedFields.push('server', 'port');
-      }
-    }
-
-    if (values.authType != 'awsIam' && values.authType != 'socket') {
-      allowedFields.push('password');
-    }
-
-    if (!values.useDatabaseUrl) {
-      allowedFields.push('defaultDatabase', 'singleDatabase');
-    }
-
+    const allowedFields = ['databaseUrl', 'password', 'isReadOnly', 'useSeparateSchemas'];
     return allowedFields.includes(field);
-  },
-
-  beforeConnectionSave: connection => {
-    const { databaseUrl } = connection;
-    if (databaseUrl) {
-      const m = databaseUrl.match(/\/([^/]+)($|\?)/);
-      return {
-        ...connection,
-        singleDatabase: !!m,
-
-        defaultDatabase: m ? m[1] : null,
-      };
-    }
-    return connection;
   },
 
   __analyserInternals: {},
@@ -212,10 +191,11 @@ EXECUTE FUNCTION function_name();`,
 };
 
 /** @type {import('dbgate-types').EngineDriver} */
-const postgresDriver = {
+const duckdbDriver = {
   ...postgresDriverBase,
   engine: 'duckdb@dbgate-plugin-duckdb',
-  title: 'DuckDB PG',
+  title: 'DuckDB',
+  databaseUrlPlaceholder: 'e.g. :memory:',
   defaultPort: 5432,
   dialect: {
     ...dialect,
@@ -226,11 +206,7 @@ const postgresDriver = {
     if (version) {
       return {
         ...dialect,
-        materializedViews:
-          version &&
-          version.versionMajor != null &&
-          version.versionMinor != null &&
-          (version.versionMajor > 9 || version.versionMajor == 9 || version.versionMinor >= 3),
+        materializedViews: true,
         isFipsComplianceOn: version.isFipsComplianceOn,
       };
     }
@@ -238,53 +214,4 @@ const postgresDriver = {
   },
 };
 
-/** @type {import('dbgate-types').EngineDriver} */
-const cockroachDriver = {
-  ...postgresDriverBase,
-  engine: 'cockroach@dbgate-plugin-duckdb',
-  title: 'CockroachDB',
-  defaultPort: 26257,
-  dialect: {
-    ...dialect,
-    materializedViews: true,
-    dropColumnDependencies: ['primaryKey', 'dependencies'],
-    dropPrimaryKey: false,
-  },
-  __analyserInternals: {},
-};
-
-/** @type {import('dbgate-types').EngineDriver} */
-const redshiftDriver = {
-  ...postgresDriverBase,
-  dialect: {
-    ...dialect,
-    stringAgg: false,
-  },
-  __analyserInternals: {
-    skipIndexes: true,
-  },
-  engine: 'redshift@dbgate-plugin-duckdb',
-  title: 'Amazon Redshift',
-  defaultPort: 5439,
-  premiumOnly: true,
-  databaseUrlPlaceholder: 'e.g. redshift-cluster-1.xxxx.redshift.amazonaws.com:5439/dev',
-  showConnectionField: (field, values) =>
-    ['databaseUrl', 'user', 'password', 'isReadOnly', 'useSeparateSchemas'].includes(field),
-  beforeConnectionSave: connection => {
-    const { databaseUrl } = connection;
-    if (databaseUrl) {
-      const m = databaseUrl.match(/\/([^/]+)$/);
-      if (m) {
-        return {
-          ...connection,
-          singleDatabase: true,
-          defaultDatabase: m[1],
-          // displayName: connection.displayName || `${m[1]} on Amazon Redshift`,
-        };
-      }
-    }
-    return connection;
-  },
-};
-
-module.exports = [postgresDriver, cockroachDriver, redshiftDriver];
+module.exports = [duckdbDriver];
