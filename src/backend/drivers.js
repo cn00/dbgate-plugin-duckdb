@@ -186,7 +186,7 @@ const drivers = driverBases.map(driverBase => ({
   },
   async readQueryTask(stmt, pass) {
     let sent = 0;
-    for (const row of stmt.iterate()) {
+    for (const row of await stmt.all()) {
       sent++;
       if (!pass.write(row)) {
         console.log('WAIT DRAIN', sent);
