@@ -2,7 +2,13 @@ module.exports = `
 select 
   table_name as "pure_name",
   table_schema as "schema_name",
-  $md5Function(view_definition) as "hash_code"
+  md5(view_definition) as "hash_code"
 from
-  information_schema.views where table_schema != 'information_schema' and table_schema != 'pg_catalog' and table_schema !~ '^_timescaledb_' and table_schema =SCHEMA_NAME_CONDITION
+  information_schema.views
+where
+  table_schema =SCHEMA_NAME_CONDITION
+  and table_catalog not in('temp', 'system')
+  and table_name not like 'duckdb_%'
+  and table_name not like 'sqlite_%'
+  and table_name not like 'pragma_%'
 `;

@@ -18,8 +18,8 @@ discussion: https://github.com/dbgate/dbgate/discussions/1016
 - [x] table data filter
 - [ ] table data editor
 - [x] bigint support
-- [ ] bigint on filter value select
-- [ ] views
+- [x] bigint on filter value select
+- [x] views
 - [ ] indexes
 - [ ] triggers
 - [ ] stored procedures
