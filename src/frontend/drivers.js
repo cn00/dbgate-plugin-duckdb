@@ -147,7 +147,7 @@ const postgresDriverBase = {
   // showConnectionField: (field, values) =>
   //   ['server', 'port', 'user', 'password', 'defaultDatabase', 'singleDatabase'].includes(field),
   showConnectionField: (field, values) => {
-    const allowedFields = ['databaseUrl', 'password', 'isReadOnly', 'useSeparateSchemas'];
+    const allowedFields = ['databaseUrl', 'password', 'isReadOnly'];
     return allowedFields.includes(field);
   },
 

@@ -15,86 +15,12 @@ const {
   extractErrorLogData,
 } =require('dbgate-tools');
 
-let authProxy;
 
 const logger = getLogger('duckdbDriver');
 
-function extractGeographyDate(value) {
-  try {
-    const buffer = Buffer.from(value, 'hex');
-    const parsed = wkx.Geometry.parse(buffer).toWkt();
+global.duckdbConnections = {};
+let connections = global.duckdbConnections;
 
-    return parsed;
-  } catch (_err) {
-    return value;
-  }
-}
-
-function transformRow(row, columnsToTransform) {
-  if (!columnsToTransform?.length) return row;
-
-  for (const col of columnsToTransform) {
-    const { columnName, dataTypeName } = col;
-    if (dataTypeName == 'geography') {
-      row[columnName] = extractGeographyDate(row[columnName]);
-    }
-  }
-
-  return row;
-}
-
-function extractPostgresColumns(result, dbhan) {
-  if (!result || !result.fields) return [];
-
-  const { typeIdToName = {} } = dbhan;
-  const res = result.fields.map(fld => ({
-    columnName: fld.name,
-    dataTypeId: fld.dataTypeID,
-    dataTypeName: typeIdToName[fld.dataTypeID],
-  }));
-  makeUniqueColumnNames(res);
-  return res;
-}
-
-function zipDataRow(rowArray, columns) {
-  return _.zipObject(
-    columns.map(x => x.columnName),
-    rowArray
-  );
-}
-
-function runStreamItem(dbhan, sql, options, rowCounter) {
-  const stmt = dbhan.client.prepare(sql);
-  if (stmt.reader) {
-    const columns = stmt.columns();
-    // const rows = stmt.all();
-
-    options.recordset(
-      columns.map((col) => ({
-        columnName: col.name,
-        dataType: col.type,
-      }))
-    );
-
-    for (const row of stmt.iterate()) {
-      options.row(row);
-    }
-  } else {
-    const info = stmt.run();
-    rowCounter.count += info.changes;
-    if (!rowCounter.date) rowCounter.date = new Date().getTime();
-    if (new Date().getTime() > rowCounter.date > 1000) {
-      options.info({
-        message: `${rowCounter.count} rows affected`,
-        time: new Date(),
-        severity: 'info',
-      });
-      rowCounter.count = 0;
-      rowCounter.date = null;
-    }
-  }
-}
-  
 /** @type {import('dbgate-types').EngineDriver} */
 const drivers = driverBases.map(driverBase => ({
   ...driverBase,
@@ -107,27 +33,38 @@ const drivers = driverBases.map(driverBase => ({
       isReadOnly,
     } = props;
 
-    // const client = new pg.Client(options);
-    let accessMode = isReadOnly ? duckdb.OPEN_READONLY : duckdb.OPEN_READWRITE;
-    const client = await duckdb.Database.create(databaseUrl, accessMode);
+    // TODO: only support readonly mode now for duckdb
+    let client = null;
+    if(!connections[databaseUrl]) {
+        logger.debug(`Connecting to ${databaseUrl}`);
+        let accessMode = isReadOnly ? duckdb.OPEN_READONLY : duckdb.OPEN_READWRITE;
+        client = await duckdb.Database.create(databaseUrl, accessMode);
+    } else {
+        logger.debug(`Using existing connection to ${databaseUrl}`);
+        client = connections[databaseUrl];
+    }
     await client.connect();
 
     const dbhan = {
       client,
+      databaseUrl
     };
 
     const datatypes = await this.query(dbhan, `SELECT oid::text as oid, typname FROM pg_type WHERE typname in ('geography')`);
     const typeIdToName = _.fromPairs(datatypes.rows.map(cur => [cur.oid, cur.typname]));
-    dbhan['typeIdToName'] = typeIdToName;
+    dbhan.typeIdToName = typeIdToName;
 
     return dbhan;
   },
   async close(dbhan) {
-    return dbhan.client.close();
+    connections[dbhan.databaseUrl] = null;
+    // dbhan.client.closeSync();
+    delete connections[dbhan.databaseUrl];
+    return await dbhan.client.close();
   },
   async query(dbhan, sql) {
     const stmt = await dbhan.client.prepare(sql);
-    logger.info(`prepare sql:\n${sql}`);
+    // logger.debug(`prepare sql:\n${sql}`);
     // stmt.raw();
     try {
       const columns = stmt.columns();
@@ -151,7 +88,6 @@ const drivers = driverBases.map(driverBase => ({
       logger.error(extractErrorLogData(error), 'Query error');
       throw error;
     } finally {
-    //   logger.info(`Finalizing sql: ${stmt.stmt.sql}`);
       await stmt.finalize();
     }
   },
@@ -166,12 +102,6 @@ const drivers = driverBases.map(driverBase => ({
     options.recordset(columns);
     const rows = await query.all();
     for (const row of rows) {
-    //   // convert bigint in row to Number
-    //   for(const key in row){
-    //     if(typeof row[key] == 'bigint')
-    //         row[key] = Number(row[key])
-    //   }
-      
       options.row(row);
     }
     options.done();
@@ -186,6 +116,19 @@ const drivers = driverBases.map(driverBase => ({
     };
   },
   async readQueryTask(stmt, pass) {
+    // stmt.each(async (err, row) => {
+    //     if (err) {
+    //         console.error('Error:', err);
+    //     } else {
+    //         if (!pass.write(row)) {
+    //             console.log('WAIT DRAIN');
+    //             await waitForDrain(pass);
+    //           }
+    //     }
+    // }, () => {
+    //     console.log('Query complete sql:', stmt.stmt.sql);
+    //     pass.end();
+    // });
     let sent = 0;
     for (const row of await stmt.all()) {
       sent++;
