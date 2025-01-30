@@ -162,6 +162,7 @@ const drivers = driverBases.map(driverBase => ({
         dataTypeId: it.type.id,
         dataTypeName: it.type.sql_type
     }));
+    makeUniqueColumnNames(columns);
     options.recordset(columns);
     const rows = await query.all();
     for (const row of rows) {
