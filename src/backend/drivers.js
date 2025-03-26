@@ -38,17 +38,20 @@ const drivers = driverBases.map(driverBase => ({
     if(!connections[databaseUrl]) {
         logger.debug(`Connecting to ${databaseUrl}`);
         let accessMode = isReadOnly ? duckdb.OPEN_READONLY : duckdb.OPEN_READWRITE;
-        client = await duckdb.Database.create(databaseUrl, accessMode);
+        let database = await duckdb.Database.create(databaseUrl, accessMode);
+        client = await database.connect();
+        connections[databaseUrl] = client;
     } else {
         logger.debug(`Using existing connection to ${databaseUrl}`);
         client = connections[databaseUrl];
     }
-    await client.connect();
 
     const dbhan = {
       client,
       databaseUrl
     };
+
+    // await this.query(dbhan, `SET s3_endpoint='s3.cn-northwest-1.amazonaws.com.cn';`);
 
     const datatypes = await this.query(dbhan, `SELECT oid::text as oid, typname FROM pg_type WHERE typname in ('geography')`);
     const typeIdToName = _.fromPairs(datatypes.rows.map(cur => [cur.oid, cur.typname]));
@@ -58,7 +61,6 @@ const drivers = driverBases.map(driverBase => ({
   },
   async close(dbhan) {
     connections[dbhan.databaseUrl] = null;
-    // dbhan.client.closeSync();
     delete connections[dbhan.databaseUrl];
     return await dbhan.client.close();
   },
