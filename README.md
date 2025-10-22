@@ -3,23 +3,25 @@
 
 <img src="https://duckdb.org/images/favicon/favicon.ico" width="64" align="right"/>
 
-# dbgate-plugin-duckdb
+# dbgate-plugin-duckdb2
 
 Use DbGate for install of this plugin
 
 discussion: https://github.com/dbgate/dbgate/discussions/1016
 
-# tasks
+# done
 - [x] connections
 - [x] databases
 - [x] tables list
 - [x] table structure
 - [x] table data viewer
 - [x] table data filter
-- [ ] table data editor
 - [x] bigint support
 - [x] bigint on filter value select
 - [x] views
+
+# TODO
+- [ ] table data editor
 - [ ] indexes
 - [ ] triggers
 - [ ] stored procedures

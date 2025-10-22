@@ -23,22 +23,22 @@ var config = {
       minimize: false,
     },
 
-  plugins: [
-    new webpack.IgnorePlugin({
-      checkResource(resource) {
-        const lazyImports = ['pg-native', 'uws'];
-        if (!lazyImports.includes(resource)) {
-          return false;
-        }
-        try {
-          require.resolve(resource);
-        } catch (err) {
-          return true;
-        }
-        return false;
-      },
-    }),
-  ],
+//   plugins: [
+//     new webpack.IgnorePlugin({
+//       checkResource(resource) {
+//         const lazyImports = ['pg-native', 'uws'];
+//         if (!lazyImports.includes(resource)) {
+//           return false;
+//         }
+//         try {
+//           require.resolve(resource);
+//         } catch (err) {
+//           return true;
+//         }
+//         return false;
+//       },
+//     }),
+//   ],
 
   externals,
 };

@@ -1,7 +1,7 @@
 {
-  "name": "dbgate-plugin-duckdb",
+  "name": "dbgate-plugin-duckdb2",
   "main": "dist/backend.js",
-  "version": "v0.1.3",
+  "version": "6.6.6-premium-beta.2",
   "license": "GPL-3.0",
   "description": "DuckDB connector plugin for DbGate",
   "homepage": "https://dbgate.org",
@@ -24,9 +24,9 @@
     "build:frontend:watch": "webpack --watch --config webpack-frontend.config",
     "build:backend": "webpack --config webpack-backend.config.js",
     "build": "yarn build:frontend && yarn build:backend",
-    "plugin": "yarn build && yarn pack && dbgate-plugin dbgate-plugin-duckdb",
-    "copydist": "yarn build && yarn pack && dbgate-copydist ../dist/dbgate-plugin-duckdb",
-    "plugout": "dbgate-plugout dbgate-plugin-duckdb",
+    "plugin": "yarn build && yarn pack && dbgate-plugin dbgate-plugin-duckdb2",
+    "copydist": "yarn build && yarn pack && dbgate-copydist ../dist/dbgate-plugin-duckdb2",
+    "plugout": "dbgate-plugout dbgate-plugin-duckdb2",
     "prepublishOnly": "yarn build"
   },
   "devDependencies": {
@@ -35,13 +35,14 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "duckdb-async": "1.4.0",
     "wkx": "^0.5.0",
     "pg-copy-streams": "^6.0.6",
-    "dbgate-query-splitter": "^4.11.3",
-    "dbgate-tools": "^6.0.0-alpha.1"
+    "dbgate-query-splitter": "^4.11.7",
+    "dbgate-tools": "^6.6.6-premium-beta.2",
+    "lodash": "^4.17.21"
   },
   "optionalDependencies": {
-    "lodash": "^4.17.21",
-    "duckdb-async": "1.3.1"
+    "lodash": "^4.17.21"
   }
 }

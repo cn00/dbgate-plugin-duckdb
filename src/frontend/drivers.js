@@ -193,8 +193,8 @@ EXECUTE FUNCTION function_name();`,
 /** @type {import('dbgate-types').EngineDriver} */
 const duckdbDriver = {
   ...postgresDriverBase,
-  engine: 'duckdb@dbgate-plugin-duckdb',
-  title: 'DuckDB',
+  engine: 'duckdb@dbgate-plugin-duckdb2',
+  title: 'DuckDB2',
   databaseUrlPlaceholder: 'e.g. :memory:',
   defaultPort: 5432,
   dialect: {
